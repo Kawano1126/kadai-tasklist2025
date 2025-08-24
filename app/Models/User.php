@@ -11,7 +11,15 @@ use Laravel\Sanctum\HasApiTokens;
 class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable;
+    public function tasks()
+    {
+        return $this->hasMany(Task::class);
+    }
 
+    public function loadRelationshipCounts()
+    {
+        $this->loadCount('tasks');
+    }
     /**
      * The attributes that are mass assignable.
      *

@@ -11,16 +11,22 @@ class TasksController extends Controller
 
     public function index()
     {
-        // メッセージ一覧を取得
-        $tasks = Task::all();         // 追加
-        return view('tasks.index', [     // 追加
-            'tasks' => $tasks,        // 追加
-        ]);                                 // 追加
-    }
+        $data = [];
+        if (\Auth::check()) { // 認証済みの場合
+            // 認証済みユーザーを取得
+            $user = \Auth::user();
+            // ユーザーの投稿の一覧を作成日時の降順で取得
+            // （後のChapterで他ユーザーの投稿も取得するように変更しますが、現時点ではこのユーザーの投稿のみ取得します）
+            $tasks = $user->tasks()->orderBy('created_at', 'desc')->paginate(10);
+            $data = [
+                'user' => $user,
+                'tasks' => $tasks,
+            ];
+        }
 
-    /**
-     * Show the form for creating a new resource.
-     */
+        // dashboardビューでそれらを表示
+        return view('dashboard', $data);
+    }
     public function create()
     {
         $task = new Task;
@@ -30,83 +36,82 @@ class TasksController extends Controller
             'task' => $task,
         ]);
     }
-
     /**
-     * Store a newly created resource in storage.
+     * Show the form for creating a new resource.
      */
     public function store(Request $request)
     {
         // バリデーション
         $request->validate([
             'status' => 'required|max:10',
-            'content' => 'required',
+            'content' => 'required|max:255',
         ]);
-        $task = new Task;
-        $task->status = $request->status;
-        $task->content = $request->content;
-        $task->save();
 
-        // トップページへリダイレクトさせる
+        // 認証済みユーザー（閲覧者）の投稿として作成（リクエストされた値をもとに作成）
+        $request->user()->tasks()->create([
+            'content' => $request->content,
+            'status' => $request->status,
+        ]);
+
+        // 前のURLへリダイレクトさせる
         return redirect('/');
     }
+    public function destroy(string $id)
+    {
+        // idの値で投稿を検索して取得
+        $task = Task::findOrFail($id);
 
-    /**
-     * Display the specified resource.
-     */
+        // 認証済みユーザー（閲覧者）がその投稿の所有者である場合は投稿を削除
+        if (\Auth::id() === $task->user_id) {
+            $task->delete();
+            return redirect('/')
+                ->with('success','Delete Successful');
+        }
+
+        // 前のURLへリダイレクトさせる
+        return redirect('/');
+        //return back()
+            //->with('Delete Failed');
+    }
     public function show(string $id)
     {
         $task = Task::findOrFail($id);
 
-        // メッセージ詳細ビューでそれを表示
-        return view('tasks.show', [
-            'task' => $task,
-        ]);
+        if (\Auth::id() === $task->user_id) {
+            return view('tasks.show', ['task' => $task]);
+        }
+
+        return redirect('/')->with('error', 'Unauthorized access.');
     }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
     public function edit(string $id)
     {
         $task = Task::findOrFail($id);
 
-        // メッセージ編集ビューでそれを表示
-        return view('tasks.edit', [
-            'task' => $task,
-        ]);
+        if (\Auth::id() === $task->user_id) {
+            return view('tasks.edit', ['task' => $task]);
+        }
+
+        return redirect('/')->with('error', 'Unauthorized access.');
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
     public function update(Request $request, string $id)
     {
-        // バリデーション
-        $request->validate([
-            'status' => 'required|max:10',
-            'content' => 'required',
-        ]);
         $task = Task::findOrFail($id);
-        // メッセージを更新
-        $task->status = $request->status;
-        $task->content = $request->content;
-        $task->save();
 
-        // トップページへリダイレクトさせる
-        return redirect('/');
-    }
+        if (\Auth::id() === $task->user_id) {
+            $request->validate([
+                'status' => 'required|max:10',
+                'content' => 'required|max:255',
+            ]);
 
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(string $id)
-    {
-        // idの値でメッセージを検索して取得
-        $task = Task::findOrFail($id);
-        // メッセージを削除
-        $task->delete();
+            $task->status = $request->status;
+            $task->content = $request->content;
+            $task->save();
 
-        // トップページへリダイレクトさせる
-        return redirect('/');
+            return redirect()->route('tasks.index')->with('success', 'Update successful');
+        }
+
+        return redirect('/')->with('error', 'Unauthorized access.');
     }
 }
